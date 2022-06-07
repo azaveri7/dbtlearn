@@ -1,3 +1,47 @@
+Notes:
+
+The entire project has to be run in python virtual environment.
+
+steps to do that:
+
+* To install virtual env.
+  brew install virtualenv
+
+* To create virtual env.
+  virtualenv venv
+
+* To activate virtual env.
+  . venv/bin/activate
+
+any python package now that you install will get install in this venv.
+
+Everytime you have to activate the venv while running our dbt dbt_project
+
+* To read the executables again
+  rehash
+
+* To install snowflake plugin
+  (venv)  pip install dbt-snowflake
+
+* To make sure dbt executable is picked up
+  (venv) rehash
+
+* To identify dbt version
+  which dbt
+
+  /Users/anandzaveri/repos/courses/dbt-course/vent/bin/dbt
+
+
+For e.g. if you exit venv and do dbt version
+
+* which dbt
+  /opt/homebrew/bin/dbt
+
+In default version, we have not installed snowflake plugin. So our dbt_project
+will not run with default dbt.
+
+So to run our project, always activate venv thingy.
+
 1. Incremental materialization
 
 {{
@@ -19,7 +63,7 @@ WHERE review_text is not null
 
 dbt run --full-refresh
 
-This is usefull when the schema of the source file / table is changed.
+This is useful when the schema of the source file / table is changed.
 
 Using above command, all the incremental tables will be re-built.
 
@@ -55,24 +99,24 @@ DROP VIEW AIRBNB.DEV.SRC_REVIEWS;
 
    create or replace transient table airbnb.dev.dim_listings_cleansed  as
       (WITH  __dbt__cte__src_listings as (
-WITH raw_listings AS ( 
-    SELECT * FROM AIRBNB.RAW.RAW_LISTINGS 
+WITH raw_listings AS (
+    SELECT * FROM AIRBNB.RAW.RAW_LISTINGS
 )
 
-SELECT id AS listing_id, 
-    name AS listing_name, 
-    listing_url, 
-    room_type, 
-    minimum_nights, 
+SELECT id AS listing_id,
+    name AS listing_name,
+    listing_url,
+    room_type,
+    minimum_nights,
     host_id,
-    price AS price_str, 
-    created_at, 
+    price AS price_str,
+    created_at,
     updated_at
 FROM
     raw_listings
 ),src_listings AS (
     SELECT * FROM __dbt__cte__src_listings
-) 
+)
 
 5. Few other snowflake queries:
 
@@ -92,5 +136,52 @@ curl https://dbtlearn.s3.us-east-2.amazonaws.com/seed_full_moon_dates.csv -o see
 
 dbt seed
 
+6. To check source freshness, add sources.yml in models folder to check fresh of all src models.
 
+Replace this line
 
+WITH raw_reviews AS (
+    SELECT * FROM AIRBNB.RAW.RAW_REVIEWS
+)
+
+with
+
+WITH raw_reviews AS (
+    SELECT * FROM {{ source('airbnb','reviews')}}
+)
+
+and then create the sources.yml as follows:
+
+version: 2
+
+sources:
+  - name: airbnb
+    schema: raw
+    tables:
+      - name: listings
+        identifier: raw_listings
+
+      - name: hosts
+        identifier: raw_hosts
+
+      - name: reviews
+        identifier: raw_reviews
+        loaded_at_field: date
+        freshness:
+          warn_after: {count: 1, period: hour}
+          error_after: {count: 24, period: hour}
+
+Run the below command:
+
+- dbt compile
+
+and then
+
+- dbt source freshness
+
+In the output you can see,
+
+01:38:32  1 of 1 START freshness of airbnb.reviews ....................................... [RUN]
+01:38:35  1 of 1 ERROR STALE freshness of airbnb.reviews ................................. [ERROR STALE in 2.83s]
+
+it shows error as our table has data whose date field is old more than 24 hours.
