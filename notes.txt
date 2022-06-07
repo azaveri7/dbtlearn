@@ -1,0 +1,96 @@
+1. Incremental materialization
+
+{{
+    config(
+        materialized = 'incremental',
+        on_schema_change = 'fail'
+    )
+}}
+WITH src_reviews AS (
+    SELECT * FROM {{ ref('src_reviews') }}
+)
+SELECT * FROM src_reviews
+WHERE review_text is not null
+{% if is_incremental() %}
+    AND review_date > (select max(review_date) from {{this}} )
+{% endif %}
+
+2. DBT command to load all incremental tables fully.
+
+dbt run --full-refresh
+
+This is usefull when the schema of the source file / table is changed.
+
+Using above command, all the incremental tables will be re-built.
+
+3. ephemeral materialization
+
+in this case, the models which are declared as ephemeral will be
+available as CTE (common table expressions) to the dbt models
+where they are referenced.
+
+src:
+      +materialized: ephemeral
+
+With above lines, all the models in src folder will be ephemeral
+and they will not be created in db schema.
+
+However, if they were created before making them ephemeral, then
+dbt will not automatically drop them. We need to drop them manually.
+
+DROP VIEW AIRBNB.DEV.SRC_HOSTS;
+DROP VIEW AIRBNB.DEV.SRC_LISTINGS;
+DROP VIEW AIRBNB.DEV.SRC_REVIEWS;
+
+4. To find the queries for materialized tables in form of CTE,
+   in dbt_project.yml
+
+   target-path: "target"  # directory which will store compiled SQL files
+
+   so check target/run/dbtlearn/models/dim_listings_cleansed.sql, where we have referenced one of the views
+
+   WITH src_listings AS (
+    SELECT * FROM {{ ref('src_listings') }}
+   )
+
+   create or replace transient table airbnb.dev.dim_listings_cleansed  as
+      (WITH  __dbt__cte__src_listings as (
+WITH raw_listings AS ( 
+    SELECT * FROM AIRBNB.RAW.RAW_LISTINGS 
+)
+
+SELECT id AS listing_id, 
+    name AS listing_name, 
+    listing_url, 
+    room_type, 
+    minimum_nights, 
+    host_id,
+    price AS price_str, 
+    created_at, 
+    updated_at
+FROM
+    raw_listings
+),src_listings AS (
+    SELECT * FROM __dbt__cte__src_listings
+) 
+
+5. Few other snowflake queries:
+
+select count(*) from AIRBNB.DEV.FCT_REVIEWS where LISTING_ID = 3176;
+
+select count(*) from AIRBNB.RAW.RAW_REVIEWS where LISTING_ID = 3176;
+
+insert into AIRBNB.RAW.RAW_REVIEWS values (3176, current_timestamp(), 'ANAND', 'Excellent stay', 'Positive');
+
+6. Seeds used to copy csv files from dbt to db schema.
+
+in dbt_project.yml, see below line:
+
+seed-paths: ["seeds"]
+
+curl https://dbtlearn.s3.us-east-2.amazonaws.com/seed_full_moon_dates.csv -o seeds/seed_full_moon_dates.csv
+
+dbt seed
+
+
+
