@@ -1,5 +1,11 @@
 Notes:
 
+The course overview can be found at:
+
+https://github.com/dbtlearn/complete-dbt-bootcamp-zero-to-hero
+
+
+
 The entire project has to be run in python virtual environment.
 
 steps to do that:
@@ -185,3 +191,152 @@ In the output you can see,
 01:38:35  1 of 1 ERROR STALE freshness of airbnb.reviews ................................. [ERROR STALE in 2.83s]
 
 it shows error as our table has data whose date field is old more than 24 hours.
+
+7. Snapshots
+
+Snapshots live in snapshots folder. They implement Type 2 SCD ( slow changing dimensions ) tables.
+
+2 strategies:
+
+# Timestamp: a unique key and an updated_at field defined on the source model.
+             These columns are used for determining changes.
+
+# Check: Any change in set of columns ( or all columns ) will be picked up as
+         as update.
+
+scd_raw_listings.sql
+
+{% snapshot scd_raw_listings %}
+
+{{
+    config(
+        target_schema='dev',
+        unique_key='id',
+        strategy='timestamp',
+        updated_at='updated_at',
+        invalidate_hard_deletes=True
+    )
+}}
+
+select * FROM {{ source('airbnb', 'listings') }}
+
+{% endsnapshot %}
+
+command:
+
+dbt snapshot
+
+In the snapshot table SCD_RAW_LISTINGS, 4 new columns are added viz.
+DBT_SCD_ID
+DBT_UPDATED_AT
+DBT_VALID_FROM
+DBT_VALID_TO
+
+update AIRBNB.RAW.RAW_LISTINGS set MINIMUM_NIGHTS = 30, UPDATED_AT = CURRENT_TIMESTAMP()
+WHERE ID = 3176
+
+select * from AIRBNB.DEV.SCD_RAW_LISTINGS where id = 3176
+
+In the SCD_RAW_LISTINGS, there is one single row.
+
+DBT_VALID_FROM = 2009-06-05 21:34:42.000 DBT_VALID_TO = null
+
+Then run
+
+dbt snapshot
+
+again checking,
+select * from AIRBNB.DEV.SCD_RAW_LISTINGS where id = 3176
+
+In the SCD_RAW_LISTINGS, there are 2 rows now.
+
+MINIMUM_NIGHTS = 30, DBT_VALID_FROM = 2022-06-06 20:09:13.184 DBT_VALID_TO = null
+MINIMUM_NIGHTS = 62, DBT_VALID_FROM = 2009-06-05 21:34:42.000 DBT_VALID_TO = 2022-06-06 20:09:13.184
+
+The entire logic to implement snapshot is mostly written in connectors, in our case in dbt-snowflake connector.
+
+8. Tests
+
+2 types: singular and generic
+
+# singular: SQL queries stored in tests which are expected to return an empty resultset.
+
+# generic: 4 types of built-in generic tests.
+  - unique
+  - not_null
+  - accepted_values
+  - Relationships
+
+Command to run tests
+
+    - dbt test
+
+Refer schema.yml for generic tests
+
+version: 2
+
+models:
+  - name: dim_listings_cleansed
+    columns:
+      - name: listing_id
+        tests:
+          - unique
+          - not_null
+
+      - name: host_id
+        tests:
+          - not_null
+          - relationships:
+              to: ref('dim_hosts_cleansed')
+              field: host_id
+
+      - name: room_type
+        tests:
+          - accepted-values:
+              values: ['Entire home/apt',
+                       'Private room',
+                       'Shared room',
+                       'Hotel room']
+
+The compiled queries can be found at target/compiled/dbtlearn/models/src/schema.yml
+
+* Query for unique_dim_listings_cleansed_listing_id.sql
+
+select
+    listing_id as unique_field,
+    count(*) as n_records
+
+from airbnb.dev.dim_listings_cleansed
+where listing_id is not null
+group by listing_id
+having count(*) > 1
+
+* Query for not_null_dim_listings_cleansed_listing_id.sql
+
+select listing_id
+from airbnb.dev.dim_listings_cleansed
+where listing_id is null
+
+* Query for not_null_dim_listings_cleansed_host_id.sql
+
+select host_id
+from airbnb.dev.dim_listings_cleansed
+where host_id is null
+
+For singular tests, write a separate sql and store it in tests folder in dbt project.
+
+Refer dim_listings_minimum_nights.sql
+
+To run a selected test, u can use the command
+
+dbt test --select dim_listings
+
+dbt test --help
+
+9. Macros
+
+  They are the Jinja templates created in macros folder.
+
+  Many built-in macros in dbt
+
+  A special macro called test can be used for implementing generic tests.
