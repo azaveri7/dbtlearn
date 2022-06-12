@@ -340,3 +340,141 @@ dbt test --help
   Many built-in macros in dbt
 
   A special macro called test can be used for implementing generic tests.
+
+  To install 3rd party packages, like dbt_utils in our project.
+  create packages.yml at project level.
+
+packages:
+  - package: dbt-labs/dbt_utils
+    version: 0.8.0
+
+Then run
+
+- dbt deps
+
+It will install the packages mentioned in packages.yml
+
+To use dbt_utils in fct_reviews.sql,
+
+SELECT
+{{ dbt_utils.surrogate_key(['listing_id','review_date','reviewer_name','review_text']) }} as review_id,
+*
+FROM
+src_reviews
+
+Creating a new column review_id in fct_reviews table which will combine all these cols and hash it.
+
+Since fct_reviews is an incremental model and there is a schema change(adding a new col review_id),
+we have to use --full-refresh option in dbt.
+
+dbt run --full-refresh --select fct-reviews
+
+10. Documentation
+
+To generate documentation, add description tags in schema.yml
+and then run command
+
+dbt docs generate
+
+Catalog written to /Users/anandzaveri/repos/courses/dbt-course/dbtlearn/target/catalog.json
+
+cd target
+
+ls -ltr
+
+less catalog.json
+
+json is not user friendly, so to convert to html doc, lets serve this doc via document server.
+Any other web server can also be used.
+
+dbt docs serve
+
+http://127.0.0.1:8080/#!/overview
+
+* To include custom documentation into docs.
+- in schema.yml, add below line
+  description: '{{ doc("dim_listing_cleansed__minimum_nights") }}'
+
+- create docs.md with below content in models folder
+
+{% docs dim_listing_cleansed__minimum_nights %} Minimum number of nights required to rent this property.
+
+Keep in mind that old listings might have minimum_nights set to 0 in the source tables. Our cleansing algorithm updates this to 1.
+
+{% enddocs %}
+
+* To view the DAG, click on the Green button on docs screen at http://127.0.0.1:8080/#!/overview
+
+* if you select any table in Databases in the doc server and then click on DAG button, data flow
+for that table will be shown in DAG.
+
+
+
+* To include any image in the documentation.
+
+- create a folder assets and copy the image over there
+- create overview.md
+- in the dbt_project.yml, add below line:
+    asset-paths: ["assets"]
+- and give reference of this in overview.md
+
+Here is the schema of our input data:
+![input schema](assets/input_schema.png)
+
+11. Analyses, Hooks and Exposures
+
+Analyses query reside in analyses folder in dbt project.
+
+then do dbt compile
+
+The analyses query will be located at target/compiled/dbtlearn/analyses
+
+The query generated in this file can be ran against our data warehouse.
+
+less target/compiled/dbtlearn/analyses/full_moon_no_sleep.sql
+
+Hooks
+
+Hooks are SQLs that are executed during predefined times.
+
+Can be configured on project, model or subfolder level.
+
+on_run_start: executed at the start of dbt
+on_run_end: executed at the end of dbt
+pre-hook: executed before a model/seed/snapshot is built
+post-hook: executed after a model/seed/snapshot is built
+
+models:
+  dbtlearn:
+    +materialized: view
+    +post-hook:
+      - "GRANT SELECT ON {{ this }} TO ROLE REPORTER"
+
+So this post-hook will be executed for every dbt model in dbtlearn package.
+{{ this }} will be replace by actual model at runtime.
+
+Prest - A BI tool to be integrated with DBT and snowflake
+
+Create a workspace in Preset and chart and dashboard and copy the URL
+
+https://152517ae.us2a.app.preset.io/superset/dashboard/p/7m8rgKwg1zY/
+
+Exposures can be used to connect BI tool to DBT.
+
+Refer dashboards.yml for the same.
+
+The use
+
+dbt docs generate
+
+dbt docs serve
+
+In the link http://localhost:8080
+
+there will be a new section
+    Exposures
+        Dashboard
+
+    Click on it and finally you can see the DBTlearn Dashboard
+
+View the lineage graph and you can see the DBTLearn Dashboard added in the lineage graph.
